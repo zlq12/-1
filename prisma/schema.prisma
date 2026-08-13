@@ -1,0 +1,231 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Currency {
+  CNY
+  USD
+}
+
+enum InvestmentType {
+  initial_investment
+  additional_investment
+  advance_payment
+  loan
+  repayment
+  dividend
+  withdrawal
+}
+
+enum ExpenseCategory {
+  product_purchase
+  first_leg_shipping
+  amazon_fee
+  fba_fee
+  storage_fee
+  advertising
+  software
+  sample
+  packaging
+  photography
+  inspection
+  customs
+  refund_loss
+  partner_repayment
+  dividend
+  other
+}
+
+enum ImportSource {
+  amazon_seller_central
+  amazon_advertising
+  lingxing_erp
+  manual_template
+  unknown
+}
+
+enum ImportStatus {
+  pending
+  mapping
+  imported
+  failed
+}
+
+enum DuplicateStrategy {
+  skip
+  overwrite
+  create_new
+}
+
+model Partner {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  equityRatio Decimal  @db.Decimal(8, 4)
+  note        String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([name])
+}
+
+model Store {
+  id          String   @id @default(cuid())
+  name        String
+  marketplace String
+  platform    String   @default("Amazon")
+  note        String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([name, marketplace])
+  @@index([name])
+  @@index([marketplace])
+}
+
+model Product {
+  id                String   @id @default(cuid())
+  parentProductName String?
+  childProductName  String?
+  sku               String
+  asin              String?
+  parentAsin        String?
+  marketplace       String?
+  storeName         String?
+  variationType     String?
+  variationValue    String?
+  status            String   @default("active")
+  note              String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@unique([sku, asin, marketplace])
+  @@index([sku])
+  @@index([asin])
+  @@index([parentAsin])
+  @@index([storeName])
+  @@index([marketplace])
+}
+
+model Investment {
+  id                   String         @id @default(cuid())
+  partnerName          String
+  type                 InvestmentType
+  amount               Decimal        @db.Decimal(18, 2)
+  currency             Currency
+  exchangeRate         Decimal?       @db.Decimal(18, 6)
+  amountInBaseCurrency Decimal        @db.Decimal(18, 2)
+  date                 DateTime
+  purpose              String?
+  relatedExpenseId     String?
+  note                 String?
+  attachmentUrl        String?
+  createdAt            DateTime       @default(now())
+  updatedAt            DateTime       @updatedAt
+
+  @@index([partnerName])
+  @@index([type])
+  @@index([date])
+}
+
+model Expense {
+  id                   String          @id @default(cuid())
+  date                 DateTime
+  category             ExpenseCategory
+  subCategory          String?
+  amount               Decimal         @db.Decimal(18, 2)
+  currency             Currency
+  exchangeRate         Decimal?        @db.Decimal(18, 6)
+  amountInBaseCurrency Decimal         @db.Decimal(18, 2)
+  paymentAccount       String?
+  payer                String
+  relatedPartner       String?
+  relatedStore         String?
+  relatedMarketplace   String?
+  relatedSku           String?
+  relatedAsin          String?
+  relatedBatchNo       String?
+  supplier             String?
+  description          String
+  note                 String?
+  attachmentUrl        String?
+  createdAt            DateTime        @default(now())
+  updatedAt            DateTime        @updatedAt
+
+  @@index([date])
+  @@index([category])
+  @@index([payer])
+  @@index([relatedStore])
+  @@index([relatedMarketplace])
+  @@index([relatedSku])
+  @@index([relatedAsin])
+}
+
+model ImportBatch {
+  id              String       @id @default(cuid())
+  fileName        String
+  source          ImportSource @default(unknown)
+  uploadedAt      DateTime     @default(now())
+  rowCount        Int          @default(0)
+  successCount    Int          @default(0)
+  failedCount     Int          @default(0)
+  status          ImportStatus @default(pending)
+  errorMessage    String?
+  originalHeaders Json
+  mappingConfig   Json?
+  previewRows     Json?
+  rawRows          Json?
+
+  salesRecords SalesRecord[]
+
+  @@index([source])
+  @@index([uploadedAt])
+  @@index([status])
+}
+
+model SalesRecord {
+  id                String       @id @default(cuid())
+  importBatchId     String?
+  source            ImportSource
+  storeName         String?
+  marketplace       String?
+  orderId           String?
+  date              DateTime
+  parentProductName String?
+  childProductName  String?
+  productName       String
+  sku               String
+  asin              String?
+  parentAsin        String?
+  variationType     String?
+  variationValue    String?
+  quantity          Int
+  grossSales        Decimal      @db.Decimal(18, 2)
+  refundAmount      Decimal      @db.Decimal(18, 2)
+  netSales          Decimal      @db.Decimal(18, 2)
+  currency          Currency
+  sessions          Int?
+  pageViews         Int?
+  conversionRate    Decimal?     @db.Decimal(10, 6)
+  buyBoxPercentage  Decimal?     @db.Decimal(10, 6)
+  unitsOrdered      Int?
+  rawData           Json
+  duplicateKey      String
+  createdAt         DateTime     @default(now())
+  updatedAt         DateTime     @updatedAt
+
+  importBatch ImportBatch? @relation(fields: [importBatchId], references: [id], onDelete: SetNull)
+
+  @@unique([duplicateKey])
+  @@index([date])
+  @@index([sku])
+  @@index([asin])
+  @@index([storeName])
+  @@index([marketplace])
+  @@index([source])
+  @@index([parentProductName])
+}
