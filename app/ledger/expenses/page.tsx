@@ -3,7 +3,6 @@ import { RankingBarChart, SharePieChart, TrendChart } from "@/components/charts"
 import { DeleteRecordButton } from "@/components/delete-record-button";
 import { ExpenseForm } from "@/components/record-form";
 import { PageHeader, Panel, StatCard } from "@/components/ui";
-import { calculateExpenseByCategory, calculateMonthlyExpenseTrend, calculateTotalExpense } from "@/lib/calculations";
 import { expenseCategoryLabels } from "@/lib/labels";
 import { prisma } from "@/lib/prisma";
 import { formatMoney } from "@/lib/utils";
@@ -11,17 +10,41 @@ import { formatMoney } from "@/lib/utils";
 export const dynamic = "force-dynamic";
 
 export default async function ExpensesPage() {
-  const expenses = await prisma.expense.findMany({ orderBy: { date: "desc" } });
-  const total = calculateTotalExpense(expenses);
-  const byCategory = calculateExpenseByCategory(expenses).map((item) => ({ ...item, name: expenseCategoryLabels[item.name] || item.name }));
-  const trend = calculateMonthlyExpenseTrend(expenses);
+  const [expenses, totalResult, recordCount, categoryRows] = await Promise.all([
+    prisma.expense.findMany({
+      orderBy: [{ date: "desc" }, { createdAt: "desc" }],
+      take: 10
+    }),
+    prisma.expense.aggregate({
+      _sum: { amountInBaseCurrency: true }
+    }),
+    prisma.expense.count(),
+    prisma.expense.groupBy({
+      by: ["category"],
+      _sum: { amountInBaseCurrency: true },
+      orderBy: { _sum: { amountInBaseCurrency: "desc" } }
+    })
+  ]);
+  const total = Number(totalResult._sum.amountInBaseCurrency || 0);
+  const byCategory = categoryRows.map((item) => ({
+    name: expenseCategoryLabels[item.category] || item.category,
+    amount: Number(item._sum.amountInBaseCurrency || 0)
+  }));
+  const trend = expenses
+    .slice()
+    .reverse()
+    .map((item) => ({
+      month: item.date.toISOString().slice(0, 10),
+      amount: Number(item.amountInBaseCurrency || 0),
+      name: "支出"
+    }));
 
   return (
     <div className="space-y-6">
       <PageHeader title="支出管理" description="记录经营支出，并按分类、月份和支出人查看费用结构。每笔支出都需要上传支付凭证图片。" />
       <div className="grid gap-4 md:grid-cols-3">
         <StatCard label="累计总支出" value={formatMoney(total)} />
-        <StatCard label="支出记录数" value={expenses.length} />
+        <StatCard label="支出记录数" value={recordCount} />
         <StatCard label="支出分类数" value={byCategory.length} />
       </div>
       <Panel title="新增支出记录">
@@ -31,14 +54,14 @@ export default async function ExpensesPage() {
         <Panel title="支出分类占比">
           <SharePieChart data={byCategory} />
         </Panel>
-        <Panel title="月度支出趋势">
+      <Panel title="最近 10 条支出趋势">
           <TrendChart data={trend} />
         </Panel>
         <Panel title="支出分类排行" className="lg:col-span-2">
           <RankingBarChart data={byCategory} />
         </Panel>
       </div>
-      <Panel title="支出明细">
+      <Panel title="最近 10 条支出明细">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>

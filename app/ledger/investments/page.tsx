@@ -2,7 +2,6 @@ import Link from "next/link";
 import { DeleteRecordButton } from "@/components/delete-record-button";
 import { InvestmentForm } from "@/components/record-form";
 import { PageHeader, Panel, StatCard } from "@/components/ui";
-import { calculatePartnerBalance, calculateRealInvestment, calculateReturnInvestment, calculateTotalInvestment } from "@/lib/calculations";
 import { investmentTypeLabels } from "@/lib/labels";
 import { prisma } from "@/lib/prisma";
 import { formatMoney } from "@/lib/utils";
@@ -10,12 +9,32 @@ import { formatMoney } from "@/lib/utils";
 export const dynamic = "force-dynamic";
 
 export default async function InvestmentsPage() {
-  const investments = await prisma.investment.findMany({ orderBy: { date: "desc" } });
-  const realInvestment = calculateRealInvestment(investments);
-  const returnInvestment = calculateReturnInvestment(investments);
-  const totalInvestment = calculateTotalInvestment(investments);
-  const balances = calculatePartnerBalance(investments);
-  const partnerCount = new Set(investments.map((item) => item.partnerName).filter(Boolean)).size;
+  const [investments, groupedByType, groupedByPartner, recordCount, distinctPartners] = await Promise.all([
+    prisma.investment.findMany({
+      orderBy: [{ date: "desc" }, { createdAt: "desc" }],
+      take: 10
+    }),
+    prisma.investment.groupBy({
+      by: ["type"],
+      _sum: { amountInBaseCurrency: true }
+    }),
+    prisma.investment.groupBy({
+      by: ["partnerName", "type"],
+      _sum: { amountInBaseCurrency: true },
+      orderBy: { partnerName: "asc" }
+    }),
+    prisma.investment.count(),
+    prisma.investment.findMany({
+      select: { partnerName: true },
+      distinct: ["partnerName"]
+    })
+  ]);
+
+  const realInvestment = sumByType(groupedByType, "initial_investment");
+  const returnInvestment = sumByType(groupedByType, "additional_investment");
+  const totalInvestment = realInvestment + returnInvestment;
+  const balances = buildPartnerInvestmentRows(groupedByPartner);
+  const partnerCount = distinctPartners.length;
 
   return (
     <div className="space-y-6">
@@ -24,7 +43,7 @@ export default async function InvestmentsPage() {
         <StatCard label="真实总投入" value={formatMoney(realInvestment)} hint="只统计初始投资" />
         <StatCard label="回款投入" value={formatMoney(returnInvestment)} hint="经营回款再次投入" />
         <StatCard label="累计总投入" value={formatMoney(totalInvestment)} hint="初始投资 + 回款投入" />
-        <StatCard label="资金记录数" value={investments.length} hint={`出资人 ${partnerCount} 位`} />
+        <StatCard label="资金记录数" value={recordCount} hint={`出资人 ${partnerCount} 位`} />
       </div>
       <Panel title="新增投资记录">
         <InvestmentForm />
@@ -53,7 +72,7 @@ export default async function InvestmentsPage() {
           </table>
         </div>
       </Panel>
-      <Panel title="投资明细">
+      <Panel title="最近 10 条投资明细">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
@@ -99,4 +118,28 @@ export default async function InvestmentsPage() {
       </Panel>
     </div>
   );
+}
+
+function sumByType(rows: { type: string; _sum: { amountInBaseCurrency: unknown } }[], type: string) {
+  return rows
+    .filter((row) => row.type === type)
+    .reduce((sum, row) => sum + Number(row._sum.amountInBaseCurrency || 0), 0);
+}
+
+function buildPartnerInvestmentRows(rows: { partnerName: string; type: string; _sum: { amountInBaseCurrency: unknown } }[]) {
+  const map = new Map<string, { partnerName: string; initialInvestment: number; returnInvestment: number; totalInvestment: number }>();
+  for (const row of rows) {
+    const current = map.get(row.partnerName) || {
+      partnerName: row.partnerName,
+      initialInvestment: 0,
+      returnInvestment: 0,
+      totalInvestment: 0
+    };
+    const amount = Number(row._sum.amountInBaseCurrency || 0);
+    if (row.type === "initial_investment") current.initialInvestment += amount;
+    if (row.type === "additional_investment") current.returnInvestment += amount;
+    current.totalInvestment = current.initialInvestment + current.returnInvestment;
+    map.set(row.partnerName, current);
+  }
+  return [...map.values()];
 }

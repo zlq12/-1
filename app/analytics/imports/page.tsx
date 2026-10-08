@@ -1,4 +1,5 @@
 import Link from "next/link";
+import type { ImportBatch } from "@prisma/client";
 import { ImportUploadForm } from "@/components/record-form";
 import { PageHeader, Panel } from "@/components/ui";
 import { importSourceLabels } from "@/lib/labels";
@@ -16,7 +17,7 @@ export default async function ImportsPage() {
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead><tr className="border-b text-left text-muted-foreground"><th className="py-2">文件</th><th>来源</th><th>状态</th><th>行数</th><th>成功</th><th>失败</th><th>操作</th></tr></thead>
-            <tbody>{batches.map((batch) => <tr key={batch.id} className="border-b"><td className="py-2">{batch.fileName}</td><td>{importSourceLabels[batch.source]}</td><td>{batch.status}</td><td>{batch.rowCount}</td><td>{batch.successCount}</td><td>{batch.failedCount}</td><td><Link className="text-primary" href={`/analytics/imports/${batch.id}/mapping`}>映射</Link></td></tr>)}</tbody>
+            <tbody>{batches.map((batch: ImportBatch) => <tr key={batch.id} className="border-b"><td className="py-2">{batch.fileName}</td><td>{importSourceLabels[batch.source]}</td><td>{batch.status}</td><td>{batch.rowCount}</td><td>{batch.successCount}</td><td>{batch.failedCount}</td><td><Link className="text-primary" href={`/analytics/imports/${batch.id}/mapping`}>映射</Link></td></tr>)}</tbody>
           </table>
         </div>
       </Panel>
